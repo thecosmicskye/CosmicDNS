@@ -36,16 +36,22 @@ def test_dns_server(ip_address, query_domain, timeout):
     try:
         # Perform a simple A record query
         start_time = time.monotonic()
-        answers = resolver.resolve(query_domain, 'A')
+        response = resolver.resolve(query_domain, 'A', raise_on_no_answer=False) # Don't raise NoAnswer exception immediately
         end_time = time.monotonic()
-        # Check if we got at least one answer and it happened within the timeout
-        # (redundant check as resolve should raise timeout exception, but good practice)
-        if answers and (end_time - start_time) <= timeout:
-            # print(f"  Success: {ip_address} responded in {end_time - start_time:.3f}s")
-            return True
+
+        # Check if the query returned a response and the RCODE indicates success (NOERROR)
+        if response.response and response.response.rcode() == dns.rcode.NOERROR:
+             # Ensure we actually got answers in the response
+            if response.rrset:
+                 # print(f"  Success: {ip_address} responded in {end_time - start_time:.3f}s with NOERROR")
+                return True
+            else:
+                # Responded with NOERROR but no actual A records (unlikely for google.com A query but possible)
+                # print(f"  Failure: {ip_address} - Responded NOERROR but no answers.")
+                return False
         else:
-            # This case might not be reached if timeout exception is always raised
-            # print(f"  Failure: {ip_address} - No answer or internal timeout issue.")
+            # RCODE was not NOERROR (e.g., NXDOMAIN, SERVFAIL, REFUSED) or no response object
+            # print(f"  Failure: {ip_address} - RCODE: {dns.rcode.to_text(response.response.rcode()) if response.response else 'N/A'}")
             return False
     except dns.exception.Timeout:
         # print(f"  Failure: {ip_address} - Query timed out (> {timeout}s).")
@@ -54,10 +60,8 @@ def test_dns_server(ip_address, query_domain, timeout):
         # This might happen if the IP is invalid or unreachable at a network level
         # print(f"  Failure: {ip_address} - No nameservers error: {e}")
         return False
-    except dns.resolver.NoAnswer:
-        # Server responded but had no answer for the query domain - counts as responsive
-        # print(f"  Success: {ip_address} - Responded but no answer for {query_domain}.")
-        return True
+    # NoAnswer is handled implicitly now by checking rcode() above, so we don't need a specific except block for it.
+    # Other exceptions still indicate failure.
     except Exception as e:
         # Catch other potential errors (e.g., network errors, permission issues)
         # print(f"  Failure: {ip_address} - An unexpected error occurred: {e}")
