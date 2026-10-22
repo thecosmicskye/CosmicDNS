@@ -3,3 +3,4 @@
 
 # Ignore INI configuration files
 *.ini
+*.csv
